@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![PropertyIQ Logo](https://via.placeholder.com/200x60/F59E0B/FFFFFF?text=PropertyIQ)
+![PropertyIQ Login](screenshots/landing-page.png)
 
 **ML-Powered Property Valuations That Beat the Market by 78%**
 
