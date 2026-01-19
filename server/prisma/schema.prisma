@@ -1,0 +1,319 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  password      String
+  name          String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  portfolio     Portfolio[]
+  savedSearches SavedSearch[]
+  alerts        Alert[]
+}
+
+model Property {
+  id                   String    @id @default(uuid())
+  externalId           String?   @unique
+
+  // Location
+  address              String
+  city                 String
+  state                String    @db.VarChar(2)
+  zipCode              String    @db.VarChar(10)
+  latitude             Float
+  longitude            Float
+  neighborhood         String?
+
+  // Property details
+  propertyType         PropertyType
+  bedrooms             Int
+  bathrooms            Float
+  sqft                 Int
+  lotSize              Int?
+  yearBuilt            Int?
+  stories              Int?
+  garage               Int?
+  pool                 Boolean   @default(false)
+
+  // Pricing
+  listPrice            Int
+  predictedPrice       Int?
+  pricePerSqft         Float?
+  zestimate            Int?
+
+  // ML scores
+  investmentScore      Int?
+  riskScore            Int?
+  appreciationForecast Float?
+  rentalYield          Float?
+
+  // Market data
+  daysOnMarket         Int?
+  status               ListingStatus @default(ACTIVE)
+  lastSoldDate         DateTime?
+  lastSoldPrice        Int?
+
+  // Timestamps
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  // Relations
+  comparables          Comparable[]
+  predictions          PricePrediction[]
+  portfolioItems       PortfolioItem[]
+
+  @@index([city])
+  @@index([zipCode])
+  @@index([investmentScore(sort: Desc)])
+  @@index([latitude, longitude])
+}
+
+model Comparable {
+  id              String    @id @default(uuid())
+  propertyId      String
+  property        Property  @relation(fields: [propertyId], references: [id])
+
+  compAddress     String
+  compCity        String
+  compState       String    @db.VarChar(2)
+  compZipCode     String
+  distance        Float     // miles
+  soldPrice       Int
+  soldDate        DateTime
+  sqft            Int
+  bedrooms        Int
+  bathrooms       Float
+  yearBuilt       Int?
+  pricePerSqft    Float
+  adjustedPrice   Int?      // Price adjusted for differences
+  similarity      Float     // 0-1 similarity score
+
+  createdAt       DateTime  @default(now())
+
+  @@index([propertyId])
+}
+
+model PricePrediction {
+  id              String    @id @default(uuid())
+  propertyId      String
+  property        Property  @relation(fields: [propertyId], references: [id])
+
+  predictedPrice  Int
+  confidenceLow   Int
+  confidenceHigh  Int
+  modelVersion    String
+  features        Json      // Feature importance
+  predictionDate  DateTime  @default(now())
+  targetDate      DateTime  // What date is this prediction for
+
+  @@index([propertyId])
+  @@index([predictionDate])
+}
+
+model MarketMetrics {
+  id                  String    @id @default(uuid())
+  zipCode             String    @unique
+  city                String
+  state               String    @db.VarChar(2)
+
+  medianPrice         Int
+  medianPriceChange   Float     // % change
+  inventoryLevel      Int
+  daysOnMarketAvg     Int
+  priceToRentRatio    Float?
+  appreciation1y      Float
+  appreciation5y      Float?
+  forecast12m         Float     // 12-month forecast %
+
+  // Market indicators
+  marketTemperature   MarketTemperature
+  buyerDemand         DemandLevel
+  sellerSupply        DemandLevel
+
+  updatedAt           DateTime  @updatedAt
+
+  @@index([city])
+}
+
+model Neighborhood {
+  id                String    @id @default(uuid())
+  name              String
+  city              String
+  state             String    @db.VarChar(2)
+
+  // Scores
+  walkScore         Int?
+  transitScore      Int?
+  bikeScore         Int?
+  schoolRating      Float?    // 1-10
+  crimeIndex        Float?    // per 1000 residents
+
+  // Demographics
+  medianIncome      Int?
+  population        Int?
+  populationGrowth  Float?    // % change
+  medianAge         Float?
+
+  // Amenities count
+  restaurants       Int?
+  groceryStores     Int?
+  parks             Int?
+  hospitals         Int?
+
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([name, city, state])
+}
+
+model Portfolio {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  name        String
+  description String?
+
+  items       PortfolioItem[]
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([userId])
+}
+
+model PortfolioItem {
+  id              String    @id @default(uuid())
+  portfolioId     String
+  portfolio       Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  propertyId      String
+  property        Property  @relation(fields: [propertyId], references: [id])
+
+  notes           String?
+  targetPrice     Int?
+  alertEnabled    Boolean   @default(false)
+
+  addedAt         DateTime  @default(now())
+
+  @@unique([portfolioId, propertyId])
+}
+
+model SavedSearch {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+
+  name        String
+  filters     Json      // Search criteria
+  alertFrequency AlertFrequency @default(DAILY)
+
+  createdAt   DateTime  @default(now())
+  lastRanAt   DateTime?
+
+  @@index([userId])
+}
+
+model Alert {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+
+  type        AlertType
+  title       String
+  message     String
+  data        Json?
+  read        Boolean     @default(false)
+
+  createdAt   DateTime    @default(now())
+
+  @@index([userId, read])
+}
+
+model CashFlowAnalysis {
+  id                String    @id @default(uuid())
+
+  // Property info
+  purchasePrice     Int
+  downPayment       Float     // Percentage
+  interestRate      Float
+  loanTermYears     Int
+
+  // Income
+  monthlyRent       Int
+  otherIncome       Int       @default(0)
+  vacancyRate       Float     @default(0.05)
+
+  // Expenses
+  propertyTax       Int
+  insurance         Int
+  maintenance       Int
+  hoa               Int       @default(0)
+  propertyManagement Float    @default(0)
+  utilities         Int       @default(0)
+
+  // Calculated results
+  monthlyCashFlow   Int
+  annualCashFlow    Int
+  capRate           Float
+  cashOnCash        Float
+  totalROI          Float
+  breakEvenMonths   Int?
+
+  createdAt         DateTime  @default(now())
+}
+
+// Enums
+enum PropertyType {
+  SINGLE_FAMILY
+  CONDO
+  TOWNHOUSE
+  MULTI_FAMILY
+  LAND
+  COMMERCIAL
+}
+
+enum ListingStatus {
+  ACTIVE
+  PENDING
+  SOLD
+  OFF_MARKET
+}
+
+enum MarketTemperature {
+  HOT
+  WARM
+  NEUTRAL
+  COOL
+  COLD
+}
+
+enum DemandLevel {
+  VERY_HIGH
+  HIGH
+  MODERATE
+  LOW
+  VERY_LOW
+}
+
+enum AlertType {
+  PRICE_DROP
+  NEW_LISTING
+  INVESTMENT_OPPORTUNITY
+  MARKET_UPDATE
+  PORTFOLIO_ALERT
+}
+
+enum AlertFrequency {
+  REALTIME
+  DAILY
+  WEEKLY
+}

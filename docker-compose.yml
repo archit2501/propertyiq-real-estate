@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Frontend
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:4000/api
+      - VITE_WS_URL=http://localhost:4000
+      - VITE_MAPBOX_TOKEN=${MAPBOX_ACCESS_TOKEN}
+    depends_on:
+      - server
+    networks:
+      - propertyiq-network
+
+  # Backend API
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgresql://propertyiq:propertyiq123@postgres:5432/propertyiq
+      - REDIS_URL=redis://redis:6379
+      - ML_SERVICE_URL=http://ml-service:8000
+      - JWT_SECRET=${JWT_SECRET}
+      - MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}
+      - NODE_ENV=production
+      - CLIENT_URL=http://localhost:3000
+    depends_on:
+      - postgres
+      - redis
+      - ml-service
+    networks:
+      - propertyiq-network
+
+  # ML Service
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://propertyiq:propertyiq123@postgres:5432/propertyiq
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ml-models:/app/models
+    networks:
+      - propertyiq-network
+
+  # PostgreSQL with PostGIS
+  postgres:
+    image: postgis/postgis:15-3.3
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=propertyiq
+      - POSTGRES_PASSWORD=propertyiq123
+      - POSTGRES_DB=propertyiq
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/prisma/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - propertyiq-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propertyiq"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - propertyiq-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  ml-models:
+
+networks:
+  propertyiq-network:
+    driver: bridge
